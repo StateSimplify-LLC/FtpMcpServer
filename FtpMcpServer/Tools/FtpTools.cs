@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text;
+using FtpMcpServer.Services;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -10,39 +11,21 @@ namespace FtpMcpServer.Tools
     [McpServerToolType]
     public class FtpTools
     {
-        private static FtpConnectionInfo BuildInfo(
-            FtpDefaults defaults,
-            string? path)
-        {
-            return new FtpConnectionInfo
-            {
-                Host = defaults.Host ?? throw new ArgumentException("Host is required"),
-                Port = defaults.Port,
-                Path = path ?? defaults.DefaultPath ?? "/",
-                Username = defaults.Username,
-                Password = defaults.Password,
-                UseSsl = defaults.UseSsl,
-                Passive = defaults.Passive,
-                IgnoreCertErrors = defaults.IgnoreCertErrors,
-                TimeoutSeconds = defaults.TimeoutSeconds
-            };
-        }
-
         [McpServerTool(Name = "ftp_listDirectory", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
         [Description("Lists entries in an FTP directory. Returns structured JSON describing each item.")]
         public static FtpListResult ListDirectory(
             FtpDefaults defaults,
             [Description("Remote path to list (e.g., /pub). Defaults to the server default path or '/'")] string? path = null)
         {
-            var info = BuildInfo(defaults, path);
-            var items = FtpClientHelper.ListDirectoryDetails(info);
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            var items = FluentFtpService.GetListing(defaults, remotePath);
             var result = new FtpListResult
             {
-                Host = info.Host,
-                Path = info.Path,
-                Port = info.Port,
-                UseSsl = info.UseSsl,
-                Passive = info.Passive,
+                Host = FtpPathHelper.GetHostOrThrow(defaults),
+                Path = remotePath,
+                Port = defaults.Port,
+                UseSsl = defaults.UseSsl,
+                Passive = defaults.Passive,
                 Items = new List<FtpListItem>()
             };
 
@@ -51,11 +34,11 @@ namespace FtpMcpServer.Tools
                 result.Items.Add(new FtpListItem
                 {
                     Name = it.Name,
-                    IsDirectory = it.IsDirectory,
-                    Size = it.Size,
-                    Modified = it.Modified,
-                    Permissions = it.Permissions,
-                    Raw = it.Raw
+                    IsDirectory = it.Type == FluentFTP.FtpObjectType.Directory,
+                    Size = it.Size >= 0 ? it.Size : null,
+                    Modified = it.Modified == DateTime.MinValue ? null : it.Modified,
+                    Permissions = it.RawPermissions,
+                    Raw = it.RawListing
                 });
             }
 
@@ -68,11 +51,11 @@ namespace FtpMcpServer.Tools
             FtpDefaults defaults,
             [Description("Remote file path to download (e.g., /pub/file.txt)")] string path)
         {
-            var info = BuildInfo(defaults, path);
-            var bytes = FtpClientHelper.Download(info);
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            var bytes = FluentFtpService.DownloadBytes(defaults, remotePath);
             string b64 = Convert.ToBase64String(bytes);
-            string uri = info.BuildUri().ToString();
-            string mime = MimeHelper.GetMimeType(info.Path);
+            string uri = FtpPathHelper.BuildUri(defaults, remotePath).ToString();
+            string mime = MimeHelper.GetMimeType(remotePath);
 
             return new EmbeddedResourceBlock
             {
@@ -92,10 +75,10 @@ namespace FtpMcpServer.Tools
             [Description("Remote file path to upload to (e.g., /incoming/file.txt)")] string path,
             [Description("Base64-encoded file content to upload")] string dataBase64)
         {
-            var info = BuildInfo(defaults, path);
             var bytes = Convert.FromBase64String(dataBase64);
-            FtpClientHelper.Upload(info, bytes);
-            return $"Uploaded {bytes.Length} bytes to {info.BuildUri()}";
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            FluentFtpService.UploadBytes(defaults, remotePath, bytes);
+            return $"Uploaded {bytes.Length} bytes to {FtpPathHelper.BuildUri(defaults, remotePath)}";
         }
 
         [McpServerTool(Name = "ftp_writeFile", Destructive = true, OpenWorld = true, Idempotent = true)]
@@ -106,7 +89,6 @@ namespace FtpMcpServer.Tools
             [Description("Plain text content to write to the file")] string content,
             [Description("Optional text encoding name (e.g., utf-8, iso-8859-1). Defaults to UTF-8.")] string? encoding = null)
         {
-            var info = BuildInfo(defaults, path);
             Encoding enc;
             if (string.IsNullOrWhiteSpace(encoding))
             {
@@ -118,8 +100,9 @@ namespace FtpMcpServer.Tools
             }
 
             var bytes = enc.GetBytes(content ?? string.Empty);
-            FtpClientHelper.Upload(info, bytes);
-            return $"Wrote {bytes.Length} bytes to {info.BuildUri()} using {enc.WebName} encoding";
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            FluentFtpService.UploadBytes(defaults, remotePath, bytes);
+            return $"Wrote {bytes.Length} bytes to {FtpPathHelper.BuildUri(defaults, remotePath)} using {enc.WebName} encoding";
         }
 
         [McpServerTool(Name = "ftp_deleteFile", Destructive = true, OpenWorld = true, Idempotent = true)]
@@ -128,9 +111,9 @@ namespace FtpMcpServer.Tools
             FtpDefaults defaults,
             [Description("Remote file path to delete (e.g., /pub/file.txt)")] string path)
         {
-            var info = BuildInfo(defaults, path);
-            FtpClientHelper.Delete(info);
-            return $"Deleted {info.BuildUri()}";
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            FluentFtpService.DeleteFile(defaults, remotePath);
+            return $"Deleted {FtpPathHelper.BuildUri(defaults, remotePath)}";
         }
 
         [McpServerTool(Name = "ftp_makeDirectory", Destructive = true, OpenWorld = true, Idempotent = true)]
@@ -139,9 +122,9 @@ namespace FtpMcpServer.Tools
             FtpDefaults defaults,
             [Description("Remote directory path to create (e.g., /pub/newdir)")] string path)
         {
-            var info = BuildInfo(defaults, path);
-            FtpClientHelper.MakeDirectory(info);
-            return $"Created directory {info.BuildUri()}";
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            FluentFtpService.CreateDirectory(defaults, remotePath);
+            return $"Created directory {FtpPathHelper.BuildUri(defaults, remotePath)}";
         }
 
         [McpServerTool(Name = "ftp_removeDirectory", Destructive = true, OpenWorld = true, Idempotent = true)]
@@ -150,9 +133,9 @@ namespace FtpMcpServer.Tools
             FtpDefaults defaults,
             [Description("Remote directory path to remove (must be empty)")] string path)
         {
-            var info = BuildInfo(defaults, path);
-            FtpClientHelper.RemoveDirectory(info);
-            return $"Removed directory {info.BuildUri()}";
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            FluentFtpService.DeleteDirectory(defaults, remotePath);
+            return $"Removed directory {FtpPathHelper.BuildUri(defaults, remotePath)}";
         }
 
         [McpServerTool(Name = "ftp_rename", Destructive = true, OpenWorld = true, Idempotent = true)]
@@ -162,9 +145,10 @@ namespace FtpMcpServer.Tools
             [Description("Current remote path to rename")] string path,
             [Description("New name (not a full path)")] string newName)
         {
-            var info = BuildInfo(defaults, path);
-            FtpClientHelper.Rename(info, newName);
-            return $"Renamed {info.BuildUri()} to {newName}";
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            var destinationPath = FtpPathHelper.CombineDirectoryAndName(remotePath, newName);
+            FluentFtpService.Rename(defaults, remotePath, destinationPath);
+            return $"Renamed {FtpPathHelper.BuildUri(defaults, remotePath)} to {newName}";
         }
 
         [McpServerTool(Name = "ftp_getFileSize", ReadOnly = true, OpenWorld = true, Idempotent = true)]
@@ -173,8 +157,8 @@ namespace FtpMcpServer.Tools
             FtpDefaults defaults,
             [Description("Remote file path")] string path)
         {
-            var info = BuildInfo(defaults, path);
-            return FtpClientHelper.GetFileSize(info);
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            return FluentFtpService.GetFileSize(defaults, remotePath);
         }
 
         [McpServerTool(Name = "ftp_getModifiedTime", ReadOnly = true, OpenWorld = true, Idempotent = true)]
@@ -183,8 +167,8 @@ namespace FtpMcpServer.Tools
             FtpDefaults defaults,
             [Description("Remote file path")] string path)
         {
-            var info = BuildInfo(defaults, path);
-            return FtpClientHelper.GetModifiedTime(info);
+            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            return FluentFtpService.GetModifiedTime(defaults, remotePath);
         }
     }
 
