@@ -53,7 +53,7 @@ builder.Services
     .AddAuthorizationFilters()
     // Your tools and resources
     .WithTools<FtpTools>()
-    .WithResources<FtpResourceType>()
+    .WithResources<FluentFtpResourceType>()
     // Optional: handle logging/setLevel so clients (like Playground) can adjust verbosity cleanly.
     .WithSetLoggingLevelHandler(async (request, ct) =>
     {
