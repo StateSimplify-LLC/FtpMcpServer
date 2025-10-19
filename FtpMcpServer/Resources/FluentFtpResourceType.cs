@@ -2,8 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
-using FtpMcpServer;
-using FluentFTP;
+using FtpMcpServer.Services;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -12,10 +11,9 @@ namespace FtpMcpServer.Resources
     [McpServerResourceType]
     public class FluentFtpResourceType
     {
-        private static FtpConnectionInfo BuildConnectionInfo(
+        private static FtpDefaults BuildDefaults(
             FtpDefaults defaults,
             string? host,
-            string? path,
             int? port,
             string? username,
             string? password,
@@ -24,48 +22,18 @@ namespace FtpMcpServer.Resources
             bool? ignoreCertErrors,
             int? timeoutSeconds)
         {
-            return new FtpConnectionInfo
+            return new FtpDefaults
             {
-                Host = host ?? defaults.Host ?? throw new ArgumentException("Host is required"),
+                Host = host ?? defaults.Host,
                 Port = port ?? defaults.Port,
-                Path = path ?? defaults.DefaultPath ?? "/",
                 Username = username ?? defaults.Username,
                 Password = password ?? defaults.Password,
                 UseSsl = useSsl ?? defaults.UseSsl,
                 Passive = passive ?? defaults.Passive,
                 IgnoreCertErrors = ignoreCertErrors ?? defaults.IgnoreCertErrors,
-                TimeoutSeconds = timeoutSeconds ?? defaults.TimeoutSeconds
+                TimeoutSeconds = timeoutSeconds ?? defaults.TimeoutSeconds,
+                DefaultPath = defaults.DefaultPath
             };
-        }
-
-        private static FtpClient CreateClient(FtpConnectionInfo info)
-        {
-            var client = new FtpClient(info.Host, info.Port, info.Username, info.Password);
-
-            client.Config.ConnectTimeout = Math.Max(1000, info.TimeoutSeconds * 1000);
-            client.Config.ReadTimeout = Math.Max(1000, info.TimeoutSeconds * 1000);
-            client.Config.DataConnectionConnectTimeout = Math.Max(1000, info.TimeoutSeconds * 1000);
-            client.Config.DataConnectionReadTimeout = Math.Max(1000, info.TimeoutSeconds * 1000);
-            client.Config.DataConnectionType = info.Passive ? FtpDataConnectionType.AutoPassive : FtpDataConnectionType.AutoActive;
-            client.Config.EncryptionMode = info.UseSsl ? FtpEncryptionMode.Explicit : FtpEncryptionMode.None;
-
-            if (info.IgnoreCertErrors)
-            {
-                client.ValidateCertificate += (control, e) =>
-                {
-                    e.Accept = true;
-                };
-            }
-
-            return client;
-        }
-
-        private static async Task<byte[]> DownloadAsync(FtpConnectionInfo info, CancellationToken cancellationToken)
-        {
-            using var client = CreateClient(info);
-            await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
-            var data = await client.DownloadBytesAsync(info.Path, token: cancellationToken).ConfigureAwait(false);
-            return data ?? Array.Empty<byte>();
         }
 
         [McpServerResource(
@@ -86,15 +54,19 @@ namespace FtpMcpServer.Resources
             [Description("Ignore TLS certificate errors (INSECURE). Defaults to false")] bool? ignoreCertErrors = null,
             [Description("Timeout in seconds, defaults to 30")] int? timeoutSeconds = null)
         {
-            var info = BuildConnectionInfo(defaults, host, path, port, username, password, useSsl, passive, ignoreCertErrors, timeoutSeconds);
+            var effectiveDefaults = BuildDefaults(defaults, host, port, username, password, useSsl, passive, ignoreCertErrors, timeoutSeconds);
+            var remotePath = FtpPathHelper.ResolvePath(effectiveDefaults, path);
 
-            byte[] bytes = await DownloadAsync(info, requestContext.CancellationToken).ConfigureAwait(false);
+            byte[] bytes = await Task.Run(
+                () => FluentFtpService.DownloadBytes(effectiveDefaults, remotePath),
+                requestContext.CancellationToken).ConfigureAwait(false);
+
             string b64 = Convert.ToBase64String(bytes);
-            string mime = MimeHelper.GetMimeType(info.Path);
+            string mime = MimeHelper.GetMimeType(remotePath);
 
             return new BlobResourceContents
             {
-                Uri = requestContext.Params?.Uri ?? info.BuildUri().ToString(),
+                Uri = requestContext.Params?.Uri ?? FtpPathHelper.BuildUri(effectiveDefaults, remotePath).ToString(),
                 MimeType = mime,
                 Blob = b64
             };
