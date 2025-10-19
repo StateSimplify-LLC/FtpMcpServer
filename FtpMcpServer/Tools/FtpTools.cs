@@ -98,6 +98,30 @@ namespace FtpMcpServer.Tools
             return $"Uploaded {bytes.Length} bytes to {info.BuildUri()}";
         }
 
+        [McpServerTool(Name = "ftp_writeFile", Destructive = true, OpenWorld = true, Idempotent = true)]
+        [Description("Writes plain text content to a file on the FTP server using the specified encoding (UTF-8 by default).")]
+        public static string WriteFile(
+            FtpDefaults defaults,
+            [Description("Remote file path to write to (e.g., /incoming/file.txt)")] string path,
+            [Description("Plain text content to write to the file")] string content,
+            [Description("Optional text encoding name (e.g., utf-8, iso-8859-1). Defaults to UTF-8.")] string? encoding = null)
+        {
+            var info = BuildInfo(defaults, path);
+            Encoding enc;
+            if (string.IsNullOrWhiteSpace(encoding))
+            {
+                enc = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            }
+            else
+            {
+                enc = Encoding.GetEncoding(encoding);
+            }
+
+            var bytes = enc.GetBytes(content ?? string.Empty);
+            FtpClientHelper.Upload(info, bytes);
+            return $"Wrote {bytes.Length} bytes to {info.BuildUri()} using {enc.WebName} encoding";
+        }
+
         [McpServerTool(Name = "ftp_deleteFile", Destructive = true, OpenWorld = true, Idempotent = true)]
         [Description("Deletes a file on the FTP server.")]
         public static string DeleteFile(
