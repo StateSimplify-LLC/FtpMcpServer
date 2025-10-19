@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using FtpMcpServer;
 using FtpMcpServer.Auth;
 using FtpMcpServer.Resources;
+using FtpMcpServer.Services;
 using FtpMcpServer.Tools;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -39,6 +40,10 @@ builder.Services.AddScoped<FtpDefaults>(sp =>
     var user = http?.User;
     return FtpDefaults.FromClaims(user);
 });
+
+// FTP service and tool dependencies
+builder.Services.AddSingleton<IFluentFtpService, FluentFtpService>();
+builder.Services.AddSingleton<FtpTools>();
 
 // MCP server configuration (HTTP URL transport)
 builder.Services
