@@ -38,7 +38,7 @@ namespace FtpMcpServer.Tools
                     Size = it.Size >= 0 ? it.Size : null,
                     Modified = it.Modified == DateTime.MinValue ? null : it.Modified,
                     Permissions = it.RawPermissions,
-                    Raw = it.RawListing
+                    Raw = it.Input
                 });
             }
 

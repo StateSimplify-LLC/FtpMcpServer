@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using FtpMcpServer;
 using FtpMcpServer.Auth;
 using FtpMcpServer.Resources;
@@ -59,6 +60,7 @@ builder.Services
     {
         // The server tracks the current logging level internally; returning an EmptyResult is sufficient.
         // If you want to actually change Microsoft.Extensions.Logging levels dynamically, you can wire that up here.
+        await Task.CompletedTask.ConfigureAwait(false);
         return new EmptyResult();
     });
 

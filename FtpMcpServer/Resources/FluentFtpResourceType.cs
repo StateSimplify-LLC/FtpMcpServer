@@ -19,14 +19,15 @@ namespace FtpMcpServer.Resources
         public static async Task<ResourceContents> Read(
             RequestContext<ReadResourceRequestParams> requestContext,
             FtpDefaults defaults,
-            [Description("Remote path to the file (URL-encoded if it includes slashes)")] string? path = null)
+            [Description("Remote path to the file (URL-encoded if it includes slashes)")] string? path = null,
+            CancellationToken cancellationToken = default)
         {
             // Resolve the remote path using the optional path and the defaults (falls back to defaults.DefaultPath when null).
             var remotePath = FtpPathHelper.ResolvePath(defaults, path);
 
             byte[] bytes = await Task.Run(
                 () => FluentFtpService.DownloadBytes(defaults, remotePath),
-                requestContext.CancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
 
             string b64 = Convert.ToBase64String(bytes);
             string mime = MimeHelper.GetMimeType(remotePath);
