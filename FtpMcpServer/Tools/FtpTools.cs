@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text;
 using FtpMcpServer.Services;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -14,11 +15,13 @@ namespace FtpMcpServer.Tools
     {
         private readonly ILogger<FtpTools> _logger;
         private readonly IFluentFtpService _ftpService;
+        private readonly FileExtensionContentTypeProvider _contentTypeProvider;
 
-        public FtpTools(ILogger<FtpTools> logger, IFluentFtpService ftpService)
+        public FtpTools(ILogger<FtpTools> logger, IFluentFtpService ftpService, FileExtensionContentTypeProvider contentTypeProvider)
         {
             _logger = logger;
             _ftpService = ftpService;
+            _contentTypeProvider = contentTypeProvider;
         }
 
         [McpServerTool(Name = "ftp_listDirectory", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
@@ -68,7 +71,9 @@ namespace FtpMcpServer.Tools
             var bytes = _ftpService.DownloadBytes(defaults, remotePath);
             string b64 = Convert.ToBase64String(bytes);
             string uri = FtpPathHelper.BuildUri(defaults, remotePath).ToString();
-            string mime = MimeHelper.GetMimeType(remotePath);
+            string mime = _contentTypeProvider.TryGetContentType(remotePath, out var contentType)
+                ? contentType
+                : "application/octet-stream";
 
             _logger.LogInformation("Downloaded {Length} bytes from {Path} on {Host}:{Port}.", bytes.Length, remotePath, defaults.Host, defaults.Port);
             return new EmbeddedResourceBlock
