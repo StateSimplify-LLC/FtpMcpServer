@@ -19,7 +19,7 @@ namespace FtpMcpServer.Resources
             UriTemplate = "resource://ftp/file{?path}",
             Name = "ftp_file",
             MimeType = "application/octet-stream")]
-        [Description("Reads a file from an FTP server using only the provided FtpDefaults for connection settings; an optional path may be provided.")]
+        [Description("Reads a file from an FTP server using the provided defaults; path may be provided via template, query, or fragment.")]
         public static async Task<ResourceContents> Read(
             RequestContext<ReadResourceRequestParams> requestContext,
             FtpDefaults defaults,
@@ -28,32 +28,24 @@ namespace FtpMcpServer.Resources
             [Description("Remote path to the file (URL-encoded if it includes slashes)")] string? path = null,
             CancellationToken cancellationToken = default)
         {
-            // Resolve the remote path from bound param, raw URI query/fragment, or defaults.
             var remotePath = GetRemotePath(requestContext, defaults, path);
-
-            // Download file bytes (run on thread pool if service method is synchronous)
             byte[] bytes = await Task.Run(
                 () => ftpService.DownloadBytes(defaults, remotePath),
                 cancellationToken).ConfigureAwait(false);
 
-            // IMPORTANT: Zero-length files are valid. Do not throw on empty arrays.
             if (bytes is null)
             {
                 throw new InvalidOperationException($"No bytes were returned when downloading '{remotePath}'.");
             }
 
             string b64 = Convert.ToBase64String(bytes);
-
-            // Derive a MIME type; fall back to octet-stream
             string fileNameForMime = Path.GetFileName(remotePath);
             string mime = contentTypeProvider.TryGetContentType(fileNameForMime, out var contentType)
-                ? contentType
+                ? contentType!
                 : "application/octet-stream";
 
             return new BlobResourceContents
             {
-                // Prefer the exact request URI if present so the client can correlate results;
-                // otherwise synthesize an ftp:// URI for clarity.
                 Uri = requestContext.Params?.Uri ?? BuildUri(defaults, remotePath).ToString(),
                 MimeType = mime,
                 Blob = b64

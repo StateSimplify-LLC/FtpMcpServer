@@ -62,44 +62,56 @@ namespace FtpMcpServer.Tools
         }
 
         [McpServerTool(Name = "ftp_downloadFile", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
-        [Description("Returns a resource_link to an FTP file. The client should call resources/read to download the file bytes via the FTP resource type.")]
+        [Description("Downloads a file from the FTP server. Returns both an embedded resource (for immediate use) and a resource_link (for clients that prefer to call resources/read).")]
         public IReadOnlyList<ContentBlock> DownloadFile(
             FtpDefaults defaults,
             [Description("Remote file path to download (e.g., /pub/file.txt)")] string path)
         {
             var remotePath = GetRemotePath(defaults, path);
-            _logger.LogInformation("Preparing resource link for FTP file {Path} on {Host}:{Port}.", remotePath, defaults.Host, defaults.Port);
+            _logger.LogInformation("Downloading FTP file {Path} from {Host}:{Port}.", remotePath, defaults.Host, defaults.Port);
 
-            // Build an MCP resource:// URI that targets our FTP ResourceType
-            // Encode the path to be safe with the MCP C# SDK UriTemplate binder.
+            // Download bytes once
+            var bytes = _ftpService.DownloadBytes(defaults, remotePath);
+            if (bytes is null)
+            {
+                // Defensive: FluentFTP returns false + null only if something is very off;
+                // throw to surface a proper MCP error rather than a silent 'no result'
+                throw new InvalidOperationException($"Download returned no bytes for '{remotePath}'.");
+            }
+
+            // Build our MCP resource:// URI for the resource type
             string resourceUri = $"resource://ftp/file?path={Uri.EscapeDataString(remotePath)}";
 
-            // Derive MIME type from file extension (fallback to octet-stream)
+            // MIME type from file extension
             string mime = _contentTypeProvider.TryGetContentType(remotePath, out var contentType)
-                ? contentType
+                ? contentType!
                 : "application/octet-stream";
 
-            // Best-effort file size (optional; don’t fail the tool if this call fails)
-            long? size = null;
-            try
+            // Friendly name for link display
+            string name = Path.GetFileName(remotePath);
+            if (string.IsNullOrEmpty(name))
             {
-                size = _ftpService.GetFileSize(defaults, remotePath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Could not determine size for {Path} on {Host}:{Port}. Continuing without size.", remotePath, defaults.Host, defaults.Port);
+                name = remotePath.TrimEnd('/'); // fallback if path had trailing slash
             }
 
-            // Friendly name (last path segment)
-            string name;
-            int lastSlash = remotePath.LastIndexOf('/');
-            name = lastSlash >= 0 && lastSlash < remotePath.Length - 1
-                ? remotePath.Substring(lastSlash + 1)
-                : remotePath;
+            // Optional size
+            long size = bytes.LongLength;
 
-            // Return a resource_link so the client does the actual download via resources/read.
+            // Encode as base64 for embedded resource
+            string b64 = Convert.ToBase64String(bytes);
+
+            // Return both: embedded resource and a link (best of both worlds for all clients)
             return new List<ContentBlock>
             {
+                new EmbeddedResourceBlock
+                {
+                    Resource = new BlobResourceContents
+                    {
+                        Uri = resourceUri,
+                        MimeType = mime,
+                        Blob = b64
+                    }
+                },
                 new ResourceLinkBlock
                 {
                     Uri = resourceUri,
