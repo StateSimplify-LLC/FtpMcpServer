@@ -61,9 +61,9 @@ namespace FtpMcpServer.Tools
             return result;
         }
 
-        [McpServerTool(Name = "ftp_downloadFile", ReadOnly = true, OpenWorld = true, Idempotent = true)]
+        [McpServerTool(Name = "ftp_downloadFile", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
         [Description("Downloads an FTP file and returns it as an embedded MCP resource (base64-encoded).")]
-        public ContentBlock DownloadFile(
+        public IReadOnlyList<ContentBlock> DownloadFile(
             FtpDefaults defaults,
             [Description("Remote file path to download (e.g., /pub/file.txt)")] string path)
         {
@@ -77,13 +77,16 @@ namespace FtpMcpServer.Tools
                 : "application/octet-stream";
 
             _logger.LogInformation("Downloaded {Length} bytes from {Path} on {Host}:{Port}.", bytes.Length, remotePath, defaults.Host, defaults.Port);
-            return new EmbeddedResourceBlock
+            return new List<ContentBlock>
             {
-                Resource = new BlobResourceContents
+                new EmbeddedResourceBlock
                 {
-                    Uri = uri,
-                    MimeType = mime,
-                    Blob = b64
+                    Resource = new BlobResourceContents
+                    {
+                        Uri = uri,
+                        MimeType = mime,
+                        Blob = b64
+                    }
                 }
             };
         }
