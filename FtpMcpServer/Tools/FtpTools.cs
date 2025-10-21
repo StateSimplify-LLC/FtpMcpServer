@@ -129,8 +129,7 @@ namespace FtpMcpServer.Tools
             }
             else
             {
-                _logger.LogInformation("No confident text encoding detected for {Path}. Confidence={Confidence:P0}, Candidate={Candidate}.",
-                    detected?.Confidence ?? 0, detected?.Encoding?.WebName ?? "none");
+                _logger.LogInformation($"No confident text encoding detected for {detected?.Confidence ?? 0}. Confidence={detected?.Encoding?.WebName ?? "none":P0}");
             }
 
             if (isText)
@@ -185,8 +184,6 @@ namespace FtpMcpServer.Tools
             if (mime.Equals("binary/octet-stream", StringComparison.OrdinalIgnoreCase)) return "text/plain";
             return mime;
         }
-
-        //
 
         /*
         [McpServerTool(Name = "ftp_downloadFile", ReadOnly = true, OpenWorld = true, Idempotent = true)]
