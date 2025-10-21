@@ -62,31 +62,51 @@ namespace FtpMcpServer.Tools
         }
 
         [McpServerTool(Name = "ftp_downloadFile", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
-        [Description("Downloads an FTP file and returns it as an embedded MCP resource (base64-encoded).")]
+        [Description("Returns a resource_link to an FTP file. The client should call resources/read to download the file bytes via the FTP resource type.")]
         public IReadOnlyList<ContentBlock> DownloadFile(
             FtpDefaults defaults,
             [Description("Remote file path to download (e.g., /pub/file.txt)")] string path)
         {
             var remotePath = GetRemotePath(defaults, path);
-            _logger.LogInformation("Downloading FTP file {Path} from {Host}:{Port}.", remotePath, defaults.Host, defaults.Port);
-            var bytes = _ftpService.DownloadBytes(defaults, remotePath);
-            string b64 = Convert.ToBase64String(bytes);
-            string uri = BuildUri(defaults, remotePath).ToString();
+            _logger.LogInformation("Preparing resource link for FTP file {Path} on {Host}:{Port}.", remotePath, defaults.Host, defaults.Port);
+
+            // Build an MCP resource:// URI that targets our FTP ResourceType
+            // Encode the path to be safe with the MCP C# SDK UriTemplate binder.
+            string resourceUri = $"resource://ftp/file?path={Uri.EscapeDataString(remotePath)}";
+
+            // Derive MIME type from file extension (fallback to octet-stream)
             string mime = _contentTypeProvider.TryGetContentType(remotePath, out var contentType)
                 ? contentType
                 : "application/octet-stream";
 
-            _logger.LogInformation("Downloaded {Length} bytes from {Path} on {Host}:{Port}.", bytes.Length, remotePath, defaults.Host, defaults.Port);
+            // Best-effort file size (optional; don’t fail the tool if this call fails)
+            long? size = null;
+            try
+            {
+                size = _ftpService.GetFileSize(defaults, remotePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not determine size for {Path} on {Host}:{Port}. Continuing without size.", remotePath, defaults.Host, defaults.Port);
+            }
+
+            // Friendly name (last path segment)
+            string name;
+            int lastSlash = remotePath.LastIndexOf('/');
+            name = lastSlash >= 0 && lastSlash < remotePath.Length - 1
+                ? remotePath.Substring(lastSlash + 1)
+                : remotePath;
+
+            // Return a resource_link so the client does the actual download via resources/read.
             return new List<ContentBlock>
             {
-                new EmbeddedResourceBlock
+                new ResourceLinkBlock
                 {
-                    Resource = new BlobResourceContents
-                    {
-                        Uri = uri,
-                        MimeType = mime,
-                        Blob = b64
-                    }
+                    Uri = resourceUri,
+                    Name = name,
+                    Description = $"FTP file {remotePath} on {defaults.Host}:{defaults.Port}",
+                    MimeType = mime,
+                    Size = size
                 }
             };
         }

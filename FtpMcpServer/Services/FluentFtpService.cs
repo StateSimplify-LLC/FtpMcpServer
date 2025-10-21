@@ -170,10 +170,19 @@ namespace FtpMcpServer.Services
                 client.Credentials = new NetworkCredential("anonymous", defaults.Password);
             }
 
+            // Encryption / certificate validation
             client.Config.EncryptionMode = defaults.UseSsl ? FtpEncryptionMode.Auto : FtpEncryptionMode.None;
             client.Config.ValidateAnyCertificate = defaults.IgnoreCertErrors;
+
+            // Passive / Active
             client.Config.DataConnectionType = defaults.Passive ? FtpDataConnectionType.PASV : FtpDataConnectionType.PORT;
 
+            // Transfers: prefer binary; ensure zero-byte files are allowed
+            client.Config.UploadDataType = FtpDataType.Binary;
+            client.Config.DownloadDataType = FtpDataType.Binary;
+            client.Config.DownloadZeroByteFiles = true;
+
+            // Timeouts
             var timeoutMs = Math.Max(1000, Math.Max(1, defaults.TimeoutSeconds) * 1000);
             client.Config.ConnectTimeout = timeoutMs;
             client.Config.ReadTimeout = timeoutMs;
@@ -182,5 +191,7 @@ namespace FtpMcpServer.Services
 
             return client;
         }
+
+
     }
 }
