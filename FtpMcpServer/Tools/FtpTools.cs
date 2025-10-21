@@ -62,6 +62,8 @@ namespace FtpMcpServer.Tools
             return result;
         }
 
+        //
+
         /*
         [McpServerTool(Name = "ftp_downloadFile", ReadOnly = true, OpenWorld = true, Idempotent = true)]
         [Description("Downloads a file from the FTP server. Returns both an embedded resource (for immediate use) and a resource_link (for clients that prefer to call resources/read).")]
