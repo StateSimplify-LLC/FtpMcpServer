@@ -21,7 +21,12 @@ namespace FtpMcpServer.Services
             {
                 _logger.LogInformation("Listing FTP directory {Path} on {Host}:{Port}.", path, defaults.Host, defaults.Port);
                 var listing = client.GetListing(path, FtpListOption.Modify | FtpListOption.Size);
-                _logger.LogInformation("Found {Count} items while listing {Path} on {Host}:{Port}.", listing.Length, defaults.Host, defaults.Port);
+                _logger.LogInformation(
+                    "Found {Count} items while listing {Path} on {Host}:{Port}.",
+                    listing.Length,
+                    path,
+                    defaults.Host,
+                    defaults.Port);
                 return listing;
             });
         }
