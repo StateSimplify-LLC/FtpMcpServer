@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentFTP.Helpers;
 using FtpMcpServer.Services;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -23,7 +24,7 @@ namespace FtpMcpServer.Resources
             CancellationToken cancellationToken = default)
         {
             // Resolve the remote path using the optional path and the defaults (falls back to defaults.DefaultPath when null).
-            var remotePath = FtpPathHelper.ResolvePath(defaults, path);
+            var remotePath = GetRemotePath(defaults, path);
 
             byte[] bytes = await Task.Run(
                 () => FluentFtpService.DownloadBytes(defaults, remotePath),
@@ -34,10 +35,32 @@ namespace FtpMcpServer.Resources
 
             return new BlobResourceContents
             {
-                Uri = requestContext.Params?.Uri ?? FtpPathHelper.BuildUri(defaults, remotePath).ToString(),
+                Uri = requestContext.Params?.Uri ?? BuildUri(defaults, remotePath).ToString(),
                 MimeType = mime,
                 Blob = b64
             };
+        }
+
+        private static string GetRemotePath(FtpDefaults defaults, string? path)
+        {
+            var candidate = string.IsNullOrWhiteSpace(path) ? defaults.DefaultPath : path;
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                candidate = "/";
+            }
+
+            return RemotePaths.GetFtpPath(candidate);
+        }
+
+        private static Uri BuildUri(FtpDefaults defaults, string remotePath)
+        {
+            if (string.IsNullOrWhiteSpace(defaults.Host))
+            {
+                throw new ArgumentException("Host is required");
+            }
+
+            var ftpPath = RemotePaths.GetFtpPath(remotePath);
+            return new UriBuilder("ftp", defaults.Host, defaults.Port, ftpPath).Uri;
         }
     }
 }
