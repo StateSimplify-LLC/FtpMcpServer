@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
 using FtpMcpServer.Services;
+using Microsoft.AspNetCore.StaticFiles;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -19,6 +20,7 @@ namespace FtpMcpServer.Resources
         public static async Task<ResourceContents> Read(
             RequestContext<ReadResourceRequestParams> requestContext,
             FtpDefaults defaults,
+            FileExtensionContentTypeProvider contentTypeProvider,
             [Description("Remote path to the file (URL-encoded if it includes slashes)")] string? path = null,
             CancellationToken cancellationToken = default)
         {
@@ -30,7 +32,9 @@ namespace FtpMcpServer.Resources
                 cancellationToken).ConfigureAwait(false);
 
             string b64 = Convert.ToBase64String(bytes);
-            string mime = MimeHelper.GetMimeType(remotePath);
+            string mime = contentTypeProvider.TryGetContentType(remotePath, out var contentType)
+                ? contentType
+                : "application/octet-stream";
 
             return new BlobResourceContents
             {
