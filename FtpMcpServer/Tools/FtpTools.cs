@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Text;
 using FluentFTP.Helpers;
 using FtpMcpServer.Services;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -15,11 +16,13 @@ namespace FtpMcpServer.Tools
     {
         private readonly ILogger<FtpTools> _logger;
         private readonly IFluentFtpService _ftpService;
+        private readonly FileExtensionContentTypeProvider _contentTypeProvider;
 
-        public FtpTools(ILogger<FtpTools> logger, IFluentFtpService ftpService)
+        public FtpTools(ILogger<FtpTools> logger, IFluentFtpService ftpService, FileExtensionContentTypeProvider contentTypeProvider)
         {
             _logger = logger;
             _ftpService = ftpService;
+            _contentTypeProvider = contentTypeProvider;
         }
 
         [McpServerTool(Name = "ftp_listDirectory", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
