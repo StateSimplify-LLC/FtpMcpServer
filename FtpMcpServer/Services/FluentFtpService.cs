@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace FtpMcpServer.Services
 {
-    internal sealed class FluentFtpService : IFluentFtpService
+    public sealed class FluentFtpService : IFluentFtpService
     {
         private readonly ILogger<FluentFtpService> _logger;
 
