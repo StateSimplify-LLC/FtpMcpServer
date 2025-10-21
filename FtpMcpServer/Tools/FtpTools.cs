@@ -72,7 +72,9 @@ namespace FtpMcpServer.Tools
             var bytes = _ftpService.DownloadBytes(defaults, remotePath);
             string b64 = Convert.ToBase64String(bytes);
             string uri = BuildUri(defaults, remotePath).ToString();
-            string mime = MimeHelper.GetMimeType(remotePath);
+            string mime = _contentTypeProvider.TryGetContentType(remotePath, out var contentType)
+                ? contentType
+                : "application/octet-stream";
 
             _logger.LogInformation("Downloaded {Length} bytes from {Path} on {Host}:{Port}.", bytes.Length, remotePath, defaults.Host, defaults.Port);
             return new EmbeddedResourceBlock
