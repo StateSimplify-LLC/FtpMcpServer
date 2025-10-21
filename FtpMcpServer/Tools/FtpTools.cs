@@ -104,6 +104,7 @@ namespace FtpMcpServer.Tools
             // Return both: embedded resource and a link (best of both worlds for all clients)
             var content = new List<ContentBlock>
             {
+                new TextContentBlock { Text = $"Downloaded {name} ({size} bytes)." },
                 new EmbeddedResourceBlock
                 {
                     Resource = new BlobResourceContents
