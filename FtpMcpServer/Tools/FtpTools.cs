@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text;
+using System.IO;
 using FluentFTP.Helpers;
 using FtpMcpServer.Services;
 using Microsoft.AspNetCore.StaticFiles;
@@ -61,9 +62,9 @@ namespace FtpMcpServer.Tools
             return result;
         }
 
-        [McpServerTool(Name = "ftp_downloadFile", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
+        [McpServerTool(Name = "ftp_downloadFile", ReadOnly = true, OpenWorld = true, Idempotent = true)]
         [Description("Downloads a file from the FTP server. Returns both an embedded resource (for immediate use) and a resource_link (for clients that prefer to call resources/read).")]
-        public IReadOnlyList<ContentBlock> DownloadFile(
+        public CallToolResult DownloadFile(
             FtpDefaults defaults,
             [Description("Remote file path to download (e.g., /pub/file.txt)")] string path)
         {
@@ -101,7 +102,7 @@ namespace FtpMcpServer.Tools
             string b64 = Convert.ToBase64String(bytes);
 
             // Return both: embedded resource and a link (best of both worlds for all clients)
-            return new List<ContentBlock>
+            var content = new List<ContentBlock>
             {
                 new EmbeddedResourceBlock
                 {
@@ -121,6 +122,7 @@ namespace FtpMcpServer.Tools
                     Size = size
                 }
             };
+            return new CallToolResult { Content = content };
         }
 
         [McpServerTool(Name = "ftp_uploadFile", Destructive = true, OpenWorld = true, Idempotent = true)]
