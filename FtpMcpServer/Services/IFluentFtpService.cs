@@ -4,7 +4,7 @@ using FluentFTP;
 
 namespace FtpMcpServer.Services
 {
-    internal interface IFluentFtpService
+    public interface IFluentFtpService
     {
         IReadOnlyList<FtpListItem> GetListing(FtpDefaults defaults, string path);
 
