@@ -1,17 +1,32 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Text;
 using System.IO;
+using System.Text;
 using FluentFTP.Helpers;
 using FtpMcpServer.Services;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using UtfUnknown;
 
 namespace FtpMcpServer.Tools
 {
+    internal static class EncodingProviderBootstrap
+    {
+        // Ensure legacy code pages (Windows-1252, Shift-JIS, etc.) are available on .NET.
+        private static readonly bool s_registered = Register();
+
+        private static bool Register()
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return true;
+        }
+
+        public static void EnsureRegistered() { _ = s_registered; }
+    }
+
     [McpServerToolType]
     public class FtpTools
     {
@@ -60,6 +75,115 @@ namespace FtpMcpServer.Tools
 
             _logger.LogInformation("Returning {Count} FTP items for directory {Path} on {Host}:{Port}.", result.Items.Count, remotePath, defaults.Host, defaults.Port);
             return result;
+        }
+
+        [McpServerTool(Name = "retreiveFile", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
+        [Description("Retrieve a file from the FTP server. If the file is textual, returns decoded text; otherwise returns base64 of the file. Always returns plain JSON (no resource blocks).")]
+        public RetreiveFileResult RetreiveFile(
+            FtpDefaults defaults,
+            [Description("Remote file path to retrieve (e.g., /pub/file.txt)")] string path)
+        {
+            // Make sure legacy encodings are available once per process.
+            EncodingProviderBootstrap.EnsureRegistered();
+
+            var remotePath = GetRemotePath(defaults, path);
+            _logger.LogInformation("Retrieving FTP file {Path} from {Host}:{Port}.", remotePath, defaults.Host, defaults.Port);
+
+            var bytes = _ftpService.DownloadBytes(defaults, remotePath);
+            if (bytes is null)
+            {
+                throw new InvalidOperationException($"Download returned no bytes for '{remotePath}'.");
+            }
+
+            // Best-effort MIME from file name/extension (kept from your original logic).
+            string mime = _contentTypeProvider.TryGetContentType(remotePath, out var contentType)
+                ? contentType!
+                : "application/octet-stream";
+
+            // Use UTF.Unknown to detect whether this is text and which encoding.
+            // We'll only treat as text if:
+            //   - a candidate encoding was detected,
+            //   - confidence is at or above our threshold,
+            //   - and the bytes decode cleanly with a strict decoder (no replacements).
+            const double TextConfidenceThreshold = 0.80;
+            var detection = CharsetDetector.DetectFromBytes(bytes);
+            var detected = detection.Detected;
+            bool isText = false;
+            string decodedText = string.Empty;
+            string encodingName = "utf-8"; // default, will be replaced if we decode text
+
+            if (detected?.Encoding is not null && detected.Confidence >= TextConfidenceThreshold)
+            {
+                if (TryDecodeStrict(detected.Encoding, bytes, out decodedText))
+                {
+                    isText = true;
+                    encodingName = detected.Encoding.WebName; // e.g., "utf-8", "utf-16", "windows-1252"
+                    _logger.LogInformation("Detected text for {Path}: {Encoding} with confidence {Confidence:P0}.",
+                        remotePath, encodingName, detected.Confidence);
+                }
+                else
+                {
+                    _logger.LogInformation("Detected encoding {Encoding} for {Path} but strict decode failed; treating as binary.",
+                        detected.Encoding.WebName, remotePath);
+                }
+            }
+            else
+            {
+                _logger.LogInformation("No confident text encoding detected for {Path}. Confidence={Confidence:P0}, Candidate={Candidate}.",
+                    detected?.Confidence ?? 0, detected?.Encoding?.WebName ?? "none");
+            }
+
+            if (isText)
+            {
+                // If MIME was unknown or generic binary, normalize to text/plain.
+                mime = NormalizeMimeForText(mime);
+
+                return new RetreiveFileResult
+                {
+                    Content = decodedText,
+                    Encoding = encodingName,
+                    MimeType = mime,
+                    Path = remotePath
+                };
+            }
+            else
+            {
+                string b64 = Convert.ToBase64String(bytes);
+                return new RetreiveFileResult
+                {
+                    Content = b64,
+                    Encoding = "base64",
+                    MimeType = mime,
+                    Path = remotePath
+                };
+            }
+        }
+
+        // Strictly decode without allowing replacement characters.
+        // Returns false if decoding would require fallbacks (likely not real text).
+        private static bool TryDecodeStrict(Encoding encoding, byte[] bytes, out string text)
+        {
+            try
+            {
+                var strict = (Encoding)encoding.Clone();
+                strict.DecoderFallback = DecoderFallback.ExceptionFallback;
+                text = strict.GetString(bytes);
+                return true;
+            }
+            catch
+            {
+                text = string.Empty;
+                return false;
+            }
+        }
+
+        // If we confirmed text but the MIME guess was generic/unknown, return text/plain.
+        private static string NormalizeMimeForText(string mime)
+        {
+            if (string.IsNullOrWhiteSpace(mime)) return "text/plain";
+            if (mime.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase)) return "text/plain";
+            if (mime.Equals("binary/octet-stream", StringComparison.OrdinalIgnoreCase)) return "text/plain";
+            return mime;
         }
 
         //
@@ -269,6 +393,21 @@ namespace FtpMcpServer.Tools
             var ftpPath = RemotePaths.GetFtpPath(remotePath);
             return new UriBuilder("ftp", host, defaults.Port, ftpPath).Uri;
         }
+    }
+
+    public sealed class RetreiveFileResult
+    {
+        // The file's content: decoded text if textual; otherwise base64 string.
+        public string Content { get; set; } = string.Empty;
+
+        // "utf-8", "utf-16", "windows-1252", etc., or "base64" if the content is binary.
+        public string Encoding { get; set; } = "utf-8";
+
+        // Best-effort MIME type from file name/extension.
+        public string MimeType { get; set; } = "application/octet-stream";
+
+        // The normalized remote path we resolved.
+        public string Path { get; set; } = string.Empty;
     }
 
     public sealed class FtpListResult
