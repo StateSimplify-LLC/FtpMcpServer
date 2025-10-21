@@ -174,7 +174,13 @@ namespace FtpMcpServer.Tools
             [Description("New name (not a full path)")] string newName)
         {
             var remotePath = GetRemotePath(defaults, path);
-            var destinationPath = RemotePaths.GetFtpPath(remotePath, newName);
+            var parentDirectory = remotePath.GetFtpDirectoryName();
+            if (string.IsNullOrEmpty(parentDirectory) || parentDirectory == ".")
+            {
+                parentDirectory = "/";
+            }
+
+            var destinationPath = parentDirectory.GetFtpPath(newName);
             _logger.LogInformation("Renaming FTP path {Path} to {Destination} on {Host}:{Port}.", remotePath, destinationPath, defaults.Host, defaults.Port);
             _ftpService.Rename(defaults, remotePath, destinationPath);
             return $"Renamed {BuildUri(defaults, remotePath)} to {newName}";
