@@ -41,6 +41,9 @@ namespace FtpMcpServer.Auth
         [JsonPropertyName("timeoutSeconds")]
         public int? TimeoutSeconds { get; set; }
 
+        [JsonPropertyName("retryAttempts")]
+        public int? RetryAttempts { get; set; }
+
         public static bool TryParseFromBase64(string base64, out ApiKeyToken? token)
         {
             token = null;
@@ -109,6 +112,7 @@ namespace FtpMcpServer.Auth
             if (Passive is bool passive) identity.AddClaim(new Claim("ftp.passive", passive ? "true" : "false"));
             if (IgnoreCertErrors is bool ice) identity.AddClaim(new Claim("ftp.ignoreCertErrors", ice ? "true" : "false"));
             if (TimeoutSeconds is int ts) identity.AddClaim(new Claim("ftp.timeoutSeconds", ts.ToString()));
+            if (RetryAttempts is int ra) identity.AddClaim(new Claim("ftp.retryAttempts", ra.ToString()));
             return identity;
         }
     }

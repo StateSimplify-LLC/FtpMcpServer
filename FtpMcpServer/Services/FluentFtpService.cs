@@ -1,7 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
+using System.Net.Sockets;
+using System.Runtime.ExceptionServices;
+using System.Security.Authentication;
+using System.Threading;
 using FluentFTP;
+using FluentFTP.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace FtpMcpServer.Services
@@ -131,16 +137,46 @@ namespace FtpMcpServer.Services
 
         private T Execute<T>(FtpDefaults defaults, string path, Func<FtpClient, T> action)
         {
-            try
+            var attempts = Math.Max(1, defaults.RetryAttempts);
+            Exception? lastTransientException = null;
+
+            for (int attempt = 1; attempt <= attempts; attempt++)
             {
-                using var client = CreateAndConnect(defaults);
-                return action(client);
+                try
+                {
+                    using var client = CreateAndConnect(defaults);
+                    return action(client);
+                }
+                catch (Exception ex) when (IsFatalException(ex))
+                {
+                    _logger.LogError(ex, "Fatal FTP error on attempt {Attempt}/{Attempts} for path {Path} on {Host}:{Port}.", attempt, attempts, path, defaults.Host, defaults.Port);
+                    throw;
+                }
+                catch (Exception ex) when (IsTransientException(ex))
+                {
+                    lastTransientException = ex;
+                    if (attempt == attempts)
+                    {
+                        break;
+                    }
+
+                    _logger.LogWarning(ex, "Transient FTP error on attempt {Attempt}/{Attempts} for path {Path} on {Host}:{Port}. Retrying...", attempt, attempts, path, defaults.Host, defaults.Port);
+                    Thread.Sleep(TimeSpan.FromSeconds(1));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "FTP operation failed for path {Path} on {Host}:{Port} (attempt {Attempt}/{Attempts}).", path, defaults.Host, defaults.Port, attempt, attempts);
+                    throw;
+                }
             }
-            catch (Exception ex)
+
+            if (lastTransientException != null)
             {
-                _logger.LogError(ex, "FTP operation failed for path {Path} on {Host}:{Port}.", path, defaults.Host, defaults.Port);
-                throw;
+                _logger.LogError(lastTransientException, "FTP operation failed for path {Path} on {Host}:{Port} after {Attempts} attempts.", path, defaults.Host, defaults.Port, attempts);
+                ExceptionDispatchInfo.Capture(lastTransientException).Throw();
             }
+
+            throw new InvalidOperationException("FTP operation failed without a captured exception.");
         }
 
         private FtpClient CreateAndConnect(FtpDefaults defaults)
@@ -173,6 +209,7 @@ namespace FtpMcpServer.Services
             client.Config.EncryptionMode = defaults.UseSsl ? FtpEncryptionMode.Auto : FtpEncryptionMode.None;
             client.Config.ValidateAnyCertificate = defaults.IgnoreCertErrors;
             client.Config.DataConnectionType = defaults.Passive ? FtpDataConnectionType.PASV : FtpDataConnectionType.PORT;
+            client.Config.RetryAttempts = Math.Max(1, defaults.RetryAttempts);
 
             var timeoutMs = Math.Max(1000, Math.Max(1, defaults.TimeoutSeconds) * 1000);
             client.Config.ConnectTimeout = timeoutMs;
@@ -181,6 +218,26 @@ namespace FtpMcpServer.Services
             client.Config.DataConnectionReadTimeout = timeoutMs;
 
             return client;
+        }
+
+        private static bool IsFatalException(Exception ex)
+        {
+            return ex is AuthenticationException or FtpAuthenticationException;
+        }
+
+        private static bool IsTransientException(Exception ex)
+        {
+            if (ex is TimeoutException || ex is IOException || ex is SocketException)
+            {
+                return true;
+            }
+
+            if (ex is FtpCommandException ftpCommandException)
+            {
+                return ftpCommandException.ResponseType == FtpResponseType.TransientNegativeCompletion;
+            }
+
+            return false;
         }
 
     }

@@ -13,6 +13,7 @@ namespace FtpMcpServer
         public bool IgnoreCertErrors { get; init; } = false;
         public int TimeoutSeconds { get; init; } = 30;
         public string? DefaultPath { get; init; }
+        public int RetryAttempts { get; init; } = 3;
 
         private static bool ParseBool(string? v, bool d) =>
             v is null ? d :
@@ -42,6 +43,12 @@ namespace FtpMcpServer
             int timeout = 30;
             if (int.TryParse(user.FindFirst("ftp.timeoutSeconds")?.Value, out var ts) && ts > 0) timeout = ts;
 
+            int retryAttempts = 3;
+            if (int.TryParse(user.FindFirst("ftp.retryAttempts")?.Value, out var ra) && ra > 0)
+            {
+                retryAttempts = Math.Clamp(ra, 1, 10);
+            }
+
             string? dir = user.FindFirst("ftp.dir")?.Value;
 
             return new FtpDefaults
@@ -54,7 +61,8 @@ namespace FtpMcpServer
                 Passive = passive,
                 IgnoreCertErrors = ignoreCertErrors,
                 TimeoutSeconds = timeout,
-                DefaultPath = string.IsNullOrEmpty(dir) ? "/" : dir
+                DefaultPath = string.IsNullOrEmpty(dir) ? "/" : dir,
+                RetryAttempts = retryAttempts
             };
         }
     }
