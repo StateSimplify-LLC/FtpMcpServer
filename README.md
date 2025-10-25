@@ -53,10 +53,11 @@ Provide credentials and connection settings in a base64-encoded JSON token via t
 - `dir`: starting directory, e.g., `"/"`  
 
 **Optional**
-- `ssl`: boolean (use FTPS)  
-- `passive`: boolean (default `true`)  
-- `ignoreCertErrors`: boolean (FTPS validation)  
-- `timeoutSeconds`: number  
+- `ssl`: boolean (use FTPS)
+- `passive`: boolean (default `true`)
+- `ignoreCertErrors`: boolean (FTPS validation)
+- `timeoutSeconds`: number
+- `retryAttempts`: number (default `3`, clamped between `1` and `10`)
 
 **Example token JSON**
 ```json
@@ -69,7 +70,8 @@ Provide credentials and connection settings in a base64-encoded JSON token via t
   "ssl": false,
   "passive": true,
   "ignoreCertErrors": false,
-  "timeoutSeconds": 30
+  "timeoutSeconds": 30,
+  "retryAttempts": 3
 }
 ```
 
@@ -99,8 +101,8 @@ http://localhost:8787/token
 
 > Notes
 > - You may use either `server` or `host`. If both are provided, `host` takes precedence for connection and `server` is echoed in the payload.
-> - Defaults: `port=21`, `dir=/`. Optional booleans and `timeoutSeconds` may be omitted.
-> - Validation: missing `server/host`, `username`, or `password` returns 400. `port` must be > 0; `timeoutSeconds` (when provided) must be > 0.
+> - Defaults: `port=21`, `dir=/`. Optional booleans, `timeoutSeconds`, and `retryAttempts` may be omitted.
+> - Validation: missing `server/host`, `username`, or `password` returns 400. `port` must be > 0; `timeoutSeconds` (when provided) must be > 0; `retryAttempts` (when provided) must be between 1 and 10.
 
 **3) Copy the result**  
 The endpoint returns JSON like:
@@ -118,7 +120,8 @@ The endpoint returns JSON like:
     "useSsl": false,
     "passive": true,
     "ignoreCertErrors": false,
-    "timeoutSeconds": 30
+    "timeoutSeconds": 30,
+    "retryAttempts": 3
   }
 }
 ```
@@ -151,6 +154,11 @@ Authorization: Bearer <BASE64_STRING>
 - `ftp_rename(path, newName)`: Rename a file or directory within its parent.
 - `ftp_getFileSize(path)`: Return size in bytes.
 - `ftp_getModifiedTime(path)`: Return last modified time.
+
+### Retry handling
+- Transient network or server errors are retried up to `retryAttempts` times (defaults to 3, capped at 10) with a short delay between attempts.
+- Fatal errors such as authentication failures are surfaced immediately without retrying.
+- FluentFTP is configured with the same retry count so socket-level operations honour the limit as well.
 
 **Resource type (class: `FluentFtpResourceType`)**
 - `ftp_file`: Read a remote file and return a Blob resource with MIME type inferred from the path.
