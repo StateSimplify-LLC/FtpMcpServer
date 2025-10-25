@@ -55,6 +55,7 @@ builder.Services
     {
         // You can tweak options here (e.g., idle timeouts) if desired.
         // options.IdleTimeout = Timeout.InfiniteTimeSpan;
+        options.IdleTimeout = Timeout.InfiniteTimeSpan;
     })
     // Optional but recommended: enables [Authorize]/[AllowAnonymous] if you
     // later decorate tools/resources with attributes.

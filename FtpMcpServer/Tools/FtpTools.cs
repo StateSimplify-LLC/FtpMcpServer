@@ -77,7 +77,7 @@ namespace FtpMcpServer.Tools
             return result;
         }
 
-        [McpServerTool(Name = "retreiveFile", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
+        [McpServerTool(Name = "ftp_retreiveFile", UseStructuredContent = true, ReadOnly = true, OpenWorld = true, Idempotent = true)]
         [Description("Retrieve a file from the FTP server. If the file is textual, returns decoded text; otherwise returns base64 of the file. Always returns plain JSON (no resource blocks).")]
         public RetreiveFileResult RetreiveFile(
             FtpDefaults defaults,
